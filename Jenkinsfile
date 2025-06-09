@@ -1,115 +1,108 @@
 pipeline {
-    agent any
+  agent any
 
-    environment {
-        APP_DIR = "app"
-        SCANNER_HOME = tool 'sonar-scanner'
-        DOCKER_REPO = "anilk13/java-ci"
+  environment {
+    IMAGE_NAME = "java-ci"
+    DOCKER_REGISTRY = "anilk13"
+    GIT_CREDENTIALS_ID = "git-cred"
+    APP_DIR = "app"
+    SCANNER_HOME = tool 'sonar-scanner'
+  }
+
+  tools {
+    jdk 'jdk17'
+    maven 'Maven3'
+  }
+
+  stages {
+    stage('Determine Branch') {
+      steps {
+        script {
+          env.ACTUAL_BRANCH = env.BRANCH_NAME ?: env.GIT_BRANCH?.replaceFirst(/^origin\//, '') ?: 'dev'
+          echo "🔀 Detected branch: ${env.ACTUAL_BRANCH}"
+        }
+      }
     }
 
-    tools {
-        jdk 'jdk17'
-        maven 'Maven3'
+    stage('Clone Repository') {
+      steps {
+        git branch: "${env.ACTUAL_BRANCH}",
+            url: 'https://github.com/anil78-ops/java-CI.git',
+            credentialsId: "${GIT_CREDENTIALS_ID}"
+      }
     }
 
-    options {
-        skipDefaultCheckout()
+    stage('Trivy FS Scan') {
+      when {
+        expression { return ['dev', 'uat', 'main'].contains(env.ACTUAL_BRANCH) }
+      }
+      steps {
+        sh "trivy fs --format table -o fs.html ."
+      }
     }
 
-    stages {
-        stage('Branch Validation') {
-            when {
-                anyOf {
-                    branch 'dev'
-                    branch 'uat'
-                    branch pattern: "release/.*", comparator: "REGEXP"
-                }
-            }
-            steps {
-                echo "Running pipeline on allowed branch: ${env.BRANCH_NAME}"
-            }
+    stage('Maven Build') {
+      when {
+        expression { return ['dev', 'uat', 'main'].contains(env.ACTUAL_BRANCH) }
+      }
+      steps {
+        dir("${APP_DIR}") {
+          sh 'mvn clean package -DskipTests'
         }
-
-        stage('Git Checkout') {
-            steps {
-                // This uses Jenkins' built-in checkout for the current branch
-                checkout scm
-            }
-        }
-
-        stage('Print Build Info') {
-            steps {
-                script {
-                    def imageTag = "${env.BRANCH_NAME.replaceAll('/', '-')}-${env.BUILD_NUMBER}"
-                    echo "Build Number : ${env.BUILD_NUMBER}"
-                    echo "Branch Name  : ${env.BRANCH_NAME}"
-                    echo "Docker Image : ${DOCKER_REPO}:${imageTag}"
-                    echo "Build URL    : ${env.BUILD_URL}"
-                }
-            }
-        }
-
-        stage('Trivy FS Scan') {
-            steps {
-                sh "trivy fs --format table -o fs.html ."
-            }
-        }
-
-        stage('Maven Clean Install') {
-            steps {
-                dir("${APP_DIR}") {
-                    sh 'mvn clean package -DskipTests'
-                }
-            }
-        }
-
-        stage('SonarQube Analysis') {
-            steps {
-                withSonarQubeEnv('sonar-server') {
-                    dir("${APP_DIR}") {
-                        sh '''
-                        $SCANNER_HOME/bin/sonar-scanner \
-                        -Dsonar.projectName=CI-JOB \
-                        -Dsonar.projectKey=CI-JOB \
-                        -Dsonar.java.binaries=target
-                        '''
-                    }
-                }
-            }
-        }
-
-        stage('Publish Artifacts') {
-            steps {
-                dir("${APP_DIR}") {
-                    withMaven(globalMavenSettingsConfig: 'maven-settings', jdk: 'jdk17', maven: 'Maven3', traceability: true) {
-                        sh "mvn deploy"
-                    }
-                }
-            }
-        }
-
-        stage('Docker Build & Tag') {
-            steps {
-                dir("${APP_DIR}") {
-                    script {
-                        def imageTag = "${env.BRANCH_NAME.replaceAll('/', '-')}-${env.BUILD_NUMBER}"
-                        withDockerRegistry(credentialsId: 'docker-cred', toolName: 'docker') {
-                            sh "docker build -t ${DOCKER_REPO}:${imageTag} ."
-                        }
-                    }
-                }
-            }
-        }
-
-        stage('Docker Push') {
-            steps {
-                script {
-                    def imageTag = "${env.BRANCH_NAME.replaceAll('/', '-')}-${env.BUILD_NUMBER}"
-                    withDockerRegistry(credentialsId: 'docker-cred', toolName: 'docker') {
-                        sh "docker push ${DOCKER_REPO}:${imageTag}"
-                    }
-                }
-            }
-        }
+      }
     }
+
+    stage('SonarQube Analysis') {
+      when {
+        expression { return ['dev', 'uat', 'main'].contains(env.ACTUAL_BRANCH) }
+      }
+      steps {
+        withSonarQubeEnv('sonar-server') {
+          dir("${APP_DIR}") {
+            sh """
+              ${SCANNER_HOME}/bin/sonar-scanner \
+              -Dsonar.projectKey=CI-JOB \
+              -Dsonar.projectName=CI-JOB \
+              -Dsonar.java.binaries=target
+            """
+          }
+        }
+      }
+    }
+
+    stage('Publish Artifacts') {
+      when {
+        expression { return ['dev', 'uat', 'main'].contains(env.ACTUAL_BRANCH) }
+      }
+      steps {
+        dir("${APP_DIR}") {
+          withMaven(globalMavenSettingsConfig: 'maven-settings', jdk: 'jdk17', maven: 'Maven3', traceability: true) {
+            sh 'mvn deploy'
+          }
+        }
+      }
+    }
+
+    stage('Docker Build and Push') {
+      when {
+        expression { return ['dev', 'uat', 'main'].contains(env.ACTUAL_BRANCH) }
+      }
+      steps {
+        dir("${APP_DIR}") {
+          script {
+            def safeTag = env.ACTUAL_BRANCH.replaceAll('/', '-')
+            def imageTag = "${safeTag}-${BUILD_NUMBER}"
+            env.IMAGE_TAG = imageTag
+
+            withDockerRegistry(credentialsId: 'docker-cred', url: '') {
+              sh """
+                docker build -t ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG} .
+                docker push ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}
+              """
+            }
+          }
+        }
+      }
+    }
+  }
 }
