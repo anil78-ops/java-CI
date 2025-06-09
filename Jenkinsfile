@@ -15,11 +15,29 @@ pipeline {
   }
 
   stages {
+
     stage('Determine Branch') {
       steps {
         script {
           env.ACTUAL_BRANCH = env.BRANCH_NAME ?: env.GIT_BRANCH?.replaceFirst(/^origin\//, '') ?: 'dev'
           echo "🔀 Detected branch: ${env.ACTUAL_BRANCH}"
+        }
+      }
+    }
+
+    stage('Branch Validation') {
+      steps {
+        script {
+          def allowed = env.ACTUAL_BRANCH == 'dev' ||
+                        env.ACTUAL_BRANCH == 'uat' ||
+                        env.ACTUAL_BRANCH ==~ /^release\/.*/ ||
+                        env.ACTUAL_BRANCH ==~ /^hotfix\/.*/
+
+          if (!allowed) {
+            error "❌ Branch '${env.ACTUAL_BRANCH}' is not allowed to run this pipeline. Only dev, uat, release/*, and hotfix/* are allowed."
+          }
+
+          echo "✅ Branch '${env.ACTUAL_BRANCH}' passed validation."
         }
       }
     }
@@ -33,18 +51,12 @@ pipeline {
     }
 
     stage('Trivy FS Scan') {
-      when {
-        expression { return ['dev', 'uat', 'main'].contains(env.ACTUAL_BRANCH) }
-      }
       steps {
         sh "trivy fs --format table -o fs.html ."
       }
     }
 
     stage('Maven Build') {
-      when {
-        expression { return ['dev', 'uat', 'main'].contains(env.ACTUAL_BRANCH) }
-      }
       steps {
         dir("${APP_DIR}") {
           sh 'mvn clean package -DskipTests'
@@ -53,9 +65,6 @@ pipeline {
     }
 
     stage('SonarQube Analysis') {
-      when {
-        expression { return ['dev', 'uat', 'main'].contains(env.ACTUAL_BRANCH) }
-      }
       steps {
         withSonarQubeEnv('sonar-server') {
           dir("${APP_DIR}") {
@@ -71,9 +80,6 @@ pipeline {
     }
 
     stage('Publish Artifacts') {
-      when {
-        expression { return ['dev', 'uat', 'main'].contains(env.ACTUAL_BRANCH) }
-      }
       steps {
         dir("${APP_DIR}") {
           withMaven(globalMavenSettingsConfig: 'maven-settings', jdk: 'jdk17', maven: 'Maven3', traceability: true) {
@@ -84,9 +90,6 @@ pipeline {
     }
 
     stage('Docker Build and Push') {
-      when {
-        expression { return ['dev', 'uat', 'main'].contains(env.ACTUAL_BRANCH) }
-      }
       steps {
         dir("${APP_DIR}") {
           script {
@@ -103,6 +106,26 @@ pipeline {
           }
         }
       }
+    }
+  }
+
+  post {
+    always {
+      echo '🧹 Cleaning up workspace and Docker images...'
+
+      script {
+        def safeTag = env.ACTUAL_BRANCH?.replaceAll('/', '-') ?: "undefined"
+        def imageTag = "${safeTag}-${BUILD_NUMBER}"
+
+        // Delete the local image
+        sh """
+          docker rmi -f ${DOCKER_REGISTRY}/${IMAGE_NAME}:${imageTag} || true
+        """
+      }
+
+      cleanWs()
+
+      echo "✅ Cleanup complete."
     }
   }
 }
