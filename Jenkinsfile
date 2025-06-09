@@ -34,10 +34,10 @@ pipeline {
                         env.ACTUAL_BRANCH ==~ /^hotfix\/.*/
 
           if (!allowed) {
-            error "❌ Branch '${env.ACTUAL_BRANCH}' is not allowed to run this pipeline."
+            error "❌ Branch '${env.ACTUAL_BRANCH}' is not allowed to run this pipeline. Only dev, uat, release/*, and hotfix/* are allowed."
           }
 
-          echo "✅ Branch '${env.ACTUAL_BRANCH}' is allowed. Proceeding..."
+          echo "✅ Branch '${env.ACTUAL_BRANCH}' passed validation."
         }
       }
     }
@@ -69,9 +69,9 @@ pipeline {
         withSonarQubeEnv('sonar-server') {
           dir("${APP_DIR}") {
             sh """
-              ${SCANNER_HOME}/bin/sonar-scanner \\
-              -Dsonar.projectKey=CI-JOB \\
-              -Dsonar.projectName=CI-JOB \\
+              ${SCANNER_HOME}/bin/sonar-scanner \
+              -Dsonar.projectKey=CI-JOB \
+              -Dsonar.projectName=CI-JOB \
               -Dsonar.java.binaries=target
             """
           }
@@ -106,6 +106,26 @@ pipeline {
           }
         }
       }
+    }
+  }
+
+  post {
+    always {
+      echo '🧹 Cleaning up workspace and Docker images...'
+
+      script {
+        def safeTag = env.ACTUAL_BRANCH?.replaceAll('/', '-') ?: "undefined"
+        def imageTag = "${safeTag}-${BUILD_NUMBER}"
+
+        // Delete the local image
+        sh """
+          docker rmi -f ${DOCKER_REGISTRY}/${IMAGE_NAME}:${imageTag} || true
+        """
+      }
+
+      cleanWs()
+
+      echo "✅ Cleanup complete."
     }
   }
 }
