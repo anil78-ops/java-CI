@@ -108,4 +108,24 @@ pipeline {
       }
     }
   }
+
+  post {
+    always {
+      echo '🧹 Cleaning up workspace and Docker images...'
+
+      script {
+        def safeTag = env.ACTUAL_BRANCH?.replaceAll('/', '-') ?: "undefined"
+        def imageTag = "${safeTag}-${BUILD_NUMBER}"
+
+        // Delete the local image
+        sh """
+          docker rmi -f ${DOCKER_REGISTRY}/${IMAGE_NAME}:${imageTag} || true
+        """
+      }
+
+      cleanWs()
+
+      echo "✅ Cleanup complete."
+    }
+  }
 }
