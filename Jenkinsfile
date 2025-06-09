@@ -4,8 +4,6 @@ pipeline {
     environment {
         APP_DIR = "app"
         SCANNER_HOME = tool 'sonar-scanner'
-        // Convert branch name to safe Docker tag (e.g. release/v1 -> release-v1-42)
-        IMAGE_TAG = "${env.BRANCH_NAME.replaceAll('/', '-')}-${env.BUILD_NUMBER}"
         DOCKER_REPO = "anilk13/java-ci"
     }
 
@@ -28,29 +26,26 @@ pipeline {
                 }
             }
             steps {
-                echo "Running pipeline on allowed branch: ${BRANCH_NAME}"
+                echo "Running pipeline on allowed branch: ${env.BRANCH_NAME}"
             }
         }
 
         stage('Git Checkout') {
             steps {
-                checkout([$class: 'GitSCM',
-                    branches: [[name: "*/${env.BRANCH_NAME}"]],
-                    extensions: [],
-                    userRemoteConfigs: [[
-                        credentialsId: 'git-cred',
-                        url: 'https://github.com/anil78-ops/java-CI.git'
-                    ]]
-                ])
+                // This uses Jenkins' built-in checkout for the current branch
+                checkout scm
             }
         }
 
         stage('Print Build Info') {
             steps {
-                echo "Build Number: ${BUILD_NUMBER}"
-                echo "Branch Name: ${BRANCH_NAME}"
-                echo "Docker Image: ${DOCKER_REPO}:${IMAGE_TAG}"
-                echo "Build URL: ${BUILD_URL}"
+                script {
+                    def imageTag = "${env.BRANCH_NAME.replaceAll('/', '-')}-${env.BUILD_NUMBER}"
+                    echo "Build Number : ${env.BUILD_NUMBER}"
+                    echo "Branch Name  : ${env.BRANCH_NAME}"
+                    echo "Docker Image : ${DOCKER_REPO}:${imageTag}"
+                    echo "Build URL    : ${env.BUILD_URL}"
+                }
             }
         }
 
@@ -97,8 +92,9 @@ pipeline {
             steps {
                 dir("${APP_DIR}") {
                     script {
+                        def imageTag = "${env.BRANCH_NAME.replaceAll('/', '-')}-${env.BUILD_NUMBER}"
                         withDockerRegistry(credentialsId: 'docker-cred', toolName: 'docker') {
-                            sh "docker build -t ${DOCKER_REPO}:${IMAGE_TAG} ."
+                            sh "docker build -t ${DOCKER_REPO}:${imageTag} ."
                         }
                     }
                 }
@@ -108,8 +104,9 @@ pipeline {
         stage('Docker Push') {
             steps {
                 script {
+                    def imageTag = "${env.BRANCH_NAME.replaceAll('/', '-')}-${env.BUILD_NUMBER}"
                     withDockerRegistry(credentialsId: 'docker-cred', toolName: 'docker') {
-                        sh "docker push ${DOCKER_REPO}:${IMAGE_TAG}"
+                        sh "docker push ${DOCKER_REPO}:${imageTag}"
                     }
                 }
             }
