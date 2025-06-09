@@ -15,6 +15,7 @@ pipeline {
   }
 
   stages {
+
     stage('Determine Branch') {
       steps {
         script {
@@ -33,10 +34,10 @@ pipeline {
                         env.ACTUAL_BRANCH ==~ /^hotfix\/.*/
 
           if (!allowed) {
-            error "❌ Branch '${env.ACTUAL_BRANCH}' is not allowed. Allowed: dev, uat, release/*, hotfix/*"
-          } else {
-            echo "✅ Branch '${env.ACTUAL_BRANCH}' is allowed to proceed."
+            error "❌ Branch '${env.ACTUAL_BRANCH}' is not allowed to run this pipeline."
           }
+
+          echo "✅ Branch '${env.ACTUAL_BRANCH}' is allowed. Proceeding..."
         }
       }
     }
@@ -68,9 +69,9 @@ pipeline {
         withSonarQubeEnv('sonar-server') {
           dir("${APP_DIR}") {
             sh """
-              ${SCANNER_HOME}/bin/sonar-scanner \
-              -Dsonar.projectKey=CI-JOB \
-              -Dsonar.projectName=CI-JOB \
+              ${SCANNER_HOME}/bin/sonar-scanner \\
+              -Dsonar.projectKey=CI-JOB \\
+              -Dsonar.projectName=CI-JOB \\
               -Dsonar.java.binaries=target
             """
           }
