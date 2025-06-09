@@ -24,6 +24,23 @@ pipeline {
       }
     }
 
+    stage('Branch Validation') {
+      steps {
+        script {
+          def allowed = env.ACTUAL_BRANCH == 'dev' ||
+                        env.ACTUAL_BRANCH == 'uat' ||
+                        env.ACTUAL_BRANCH ==~ /^release\/.*/ ||
+                        env.ACTUAL_BRANCH ==~ /^hotfix\/.*/
+
+          if (!allowed) {
+            error "❌ Branch '${env.ACTUAL_BRANCH}' is not allowed. Allowed: dev, uat, release/*, hotfix/*"
+          } else {
+            echo "✅ Branch '${env.ACTUAL_BRANCH}' is allowed to proceed."
+          }
+        }
+      }
+    }
+
     stage('Clone Repository') {
       steps {
         git branch: "${env.ACTUAL_BRANCH}",
@@ -33,18 +50,12 @@ pipeline {
     }
 
     stage('Trivy FS Scan') {
-      when {
-        expression { return ['dev', 'uat', 'main'].contains(env.ACTUAL_BRANCH) }
-      }
       steps {
         sh "trivy fs --format table -o fs.html ."
       }
     }
 
     stage('Maven Build') {
-      when {
-        expression { return ['dev', 'uat', 'main'].contains(env.ACTUAL_BRANCH) }
-      }
       steps {
         dir("${APP_DIR}") {
           sh 'mvn clean package -DskipTests'
@@ -53,9 +64,6 @@ pipeline {
     }
 
     stage('SonarQube Analysis') {
-      when {
-        expression { return ['dev', 'uat', 'main'].contains(env.ACTUAL_BRANCH) }
-      }
       steps {
         withSonarQubeEnv('sonar-server') {
           dir("${APP_DIR}") {
@@ -71,9 +79,6 @@ pipeline {
     }
 
     stage('Publish Artifacts') {
-      when {
-        expression { return ['dev', 'uat', 'main'].contains(env.ACTUAL_BRANCH) }
-      }
       steps {
         dir("${APP_DIR}") {
           withMaven(globalMavenSettingsConfig: 'maven-settings', jdk: 'jdk17', maven: 'Maven3', traceability: true) {
@@ -84,9 +89,6 @@ pipeline {
     }
 
     stage('Docker Build and Push') {
-      when {
-        expression { return ['dev', 'uat', 'main'].contains(env.ACTUAL_BRANCH) }
-      }
       steps {
         dir("${APP_DIR}") {
           script {
