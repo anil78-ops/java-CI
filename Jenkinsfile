@@ -19,7 +19,7 @@ pipeline {
     stage('Determine Branch') {
       steps {
         script {
-          env.ACTUAL_BRANCH = env.BRANCH_NAME ?: env.GIT_BRANCH?.replaceFirst(/^origin\//, '') ?: 'dev'
+          env.ACTUAL_BRANCH = params.BRANCH_TO_BUILD ?: env.GIT_BRANCH?.replaceFirst(/^origin\//, '')
           echo "🔀 Detected branch: ${env.ACTUAL_BRANCH}"
         }
       }
