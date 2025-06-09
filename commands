@@ -1,0 +1,10 @@
+First clone the repo and go inside it.
+Then git remote remove origin 
+Then add the new repository commands as below
+git init
+git add README.md
+git remote add origin https://github.com/anil78-ops/springbooot.git
+git push -u origin main
+#
+http://localhost:8080/api/hello
+
