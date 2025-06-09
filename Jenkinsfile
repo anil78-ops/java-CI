@@ -30,8 +30,8 @@ pipeline {
         script {
           def allowed = env.ACTUAL_BRANCH == 'dev' ||
                         env.ACTUAL_BRANCH == 'uat' ||
-                        env.ACTUAL_BRANCH ==~ /^release\/.*/ ||
-                        env.ACTUAL_BRANCH ==~ /^hotfix\/.*/
+                        env.ACTUAL_BRANCH ==~ /^release\/.+/ ||
+                        env.ACTUAL_BRANCH ==~ /^hotfix\/.+/
 
           if (!allowed) {
             error "❌ Branch '${env.ACTUAL_BRANCH}' is not allowed to run this pipeline. Only dev, uat, release/*, and hotfix/* are allowed."
