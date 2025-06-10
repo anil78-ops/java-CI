@@ -107,7 +107,20 @@ pipeline {
         }
       }
     }
-  }
+    stage('Kubernetes Deploy') {
+      steps {
+        script {
+          def kubeconfigPath = '/home/ubuntu/.kube/config'
+            sh """
+                export KUBECONFIG=${kubeconfigPath}
+                kubectl apply -f /home/ubuntu/test.yaml
+                kubectl apply -f /home/ubuntu/testservice.yaml
+            """
+        }
+      }
+    }        
+  }      
+
 
   post {
     always {
