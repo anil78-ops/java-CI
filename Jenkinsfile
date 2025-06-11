@@ -111,16 +111,14 @@ pipeline {
 
 stage('Kubernetes Deploy') {
   when {
-    expression { return ['dev', 'uat'].contains(env.ACTUAL_BRANCH) || env.ACTUAL_BRANCH.startsWith('release/') || env.ACTUAL_BRANCH.startsWith('hotfix/') }
+    expression { return ['dev', 'uat', 'release'].any { env.ACTUAL_BRANCH.startsWith(it) } || env.ACTUAL_BRANCH.startsWith('hotfix/') }
   }
   steps {
     script {
       def branch = env.ACTUAL_BRANCH
-      def namespace = ['dev': 'dev', 'uat': 'uat'][branch] ?: 'prod'
-      def deploymentFile = ""
+      def namespace = ['dev': 'dev', 'uat': 'uat', 'release': 'prod', 'hotfix': 'prod'].find { branch.startsWith(it.key) }?.value
       def kubeconfigCredentialId = ""
-      def safeTag = branch.replaceAll('/', '-')
-      def imageTag = "${safeTag}-${BUILD_NUMBER}"
+      def deploymentFile = ""
 
       switch (branch) {
         case 'dev':
@@ -131,25 +129,35 @@ stage('Kubernetes Deploy') {
           kubeconfigCredentialId = 'kubeconfig-uat'
           deploymentFile = 'manifests/uat/uat-deployment.yaml'
           break
-        default:
+        case ~ /^release\/.*/:
+        case ~ /^hotfix\/.*/:
           kubeconfigCredentialId = 'kubeconfig-prod'
           deploymentFile = 'manifests/prod/prod-deployment.yaml'
+          break
+        default:
+          error "Unsupported branch: ${branch}"
       }
+
+      def safeTag = branch.replaceAll('/', '-')
+      def imageTag = "${safeTag}-${BUILD_NUMBER}"
+      env.IMAGE_TAG = imageTag
 
       withCredentials([
         file(credentialsId: kubeconfigCredentialId, variable: 'KCFG'),
         [$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'aws-cred']
       ]) {
-        sh '''
+        sh """
           export KUBECONFIG=$KCFG
-          sed -i 's|image: .*|image: anilk13/java-ci:'"$IMAGE_TAG"'|' '''${deploymentFile}'''
-          kubectl apply --insecure-skip-tls-verify -f '''${deploymentFile}'''
-          kubectl rollout status --insecure-skip-tls-verify deployment/k8s-demo -n '''${namespace}'''
-        '''
+          if [ ! -f ${deploymentFile} ]; then echo "❌ File ${deploymentFile} not found!"; exit 1; fi
+          sed -i 's|image: .*|image: ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}|' ${deploymentFile}
+          kubectl apply --insecure-skip-tls-verify -f ${deploymentFile}
+          kubectl rollout status --insecure-skip-tls-verify deployment/k8s-demo -n ${namespace}
+        """
       }
     }
   }
 }
+
 
 
   }
