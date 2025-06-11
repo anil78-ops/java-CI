@@ -109,50 +109,48 @@ pipeline {
     }
 
 
-    stage('Kubernetes Deploy') {
-      when {
-        expression {
-          return ['dev', 'uat'].contains(env.ACTUAL_BRANCH) ||
-                 env.ACTUAL_BRANCH.startsWith('release/') ||
-                 env.ACTUAL_BRANCH.startsWith('hotfix/')
-        }
+stage('Kubernetes Deploy') {
+  when {
+    expression { return ['dev', 'uat'].contains(env.ACTUAL_BRANCH) || env.ACTUAL_BRANCH.startsWith('release/') || env.ACTUAL_BRANCH.startsWith('hotfix/') }
+  }
+  steps {
+    script {
+      def branch = env.ACTUAL_BRANCH
+      def namespace = ['dev': 'dev', 'uat': 'uat'][branch] ?: 'prod'
+      def deploymentFile = ""
+      def kubeconfigCredentialId = ""
+      def safeTag = branch.replaceAll('/', '-')
+      def imageTag = "${safeTag}-${BUILD_NUMBER}"
+
+      switch (branch) {
+        case 'dev':
+          kubeconfigCredentialId = 'kubeconfig-dev'
+          deploymentFile = 'manifests/dev/dev-deployment.yaml'
+          break
+        case 'uat':
+          kubeconfigCredentialId = 'kubeconfig-uat'
+          deploymentFile = 'manifests/uat/uat-deployment.yaml'
+          break
+        default:
+          kubeconfigCredentialId = 'kubeconfig-prod'
+          deploymentFile = 'manifests/prod/prod-deployment.yaml'
       }
-      steps {
-        script {
-          def branch = env.ACTUAL_BRANCH
-          def namespace = (branch == 'dev') ? 'dev' :
-                          (branch == 'uat') ? 'uat' :
-                          (branch.startsWith('release/') || branch.startsWith('hotfix/')) ? 'prod' : null
 
-          def deploymentFile = ""
-          def kubeconfigCredentialId = ""
-          def safeTag = branch.replaceAll('/', '-')
-          def imageTag = "${safeTag}-${BUILD_NUMBER}"
-
-          if (branch == 'dev') {
-            kubeconfigCredentialId = 'kubeconfig-dev'
-            deploymentFile = 'manifests/dev/dev-deployment.yaml'
-          } else if (branch == 'uat') {
-            kubeconfigCredentialId = 'kubeconfig-uat'
-            deploymentFile = 'manifests/uat/uat-deployment.yaml'
-          } else if (branch.startsWith('release/') || branch.startsWith('hotfix/')) {
-            kubeconfigCredentialId = 'kubeconfig-prod'
-            deploymentFile = 'manifests/prod/prod-deployment.yaml'
-          } else {
-            error "❌ Unsupported branch for deployment: ${branch}"
-          }
-
-          withCredentials([file(credentialsId: kubeconfigCredentialId, variable: 'KCFG')]) {
-            sh """
-              export KUBECONFIG=${KCFG}
-              sed -i 's|image: .*|image: ${DOCKER_REGISTRY}/${IMAGE_NAME}:${imageTag}|' ${deploymentFile}
-              kubectl apply --insecure-skip-tls-verify -f ${deploymentFile} --validate=false
-              kubectl rollout status --insecure-skip-tls-verify deployment/k8s-demo -n ${namespace} --validate=false
-            """
-          }
-        }
+      withCredentials([
+        file(credentialsId: kubeconfigCredentialId, variable: 'KCFG'),
+        [$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'aws-cred']
+      ]) {
+        sh '''
+          export KUBECONFIG=$KCFG
+          sed -i 's|image: .*|image: anilk13/java-ci:'"$IMAGE_TAG"'|' '''${deploymentFile}'''
+          kubectl apply --insecure-skip-tls-verify -f '''${deploymentFile}'''
+          kubectl rollout status --insecure-skip-tls-verify deployment/k8s-demo -n '''${namespace}'''
+        '''
       }
     }
+  }
+}
+
 
   }
 
