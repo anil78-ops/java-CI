@@ -146,8 +146,8 @@ pipeline {
             sh """
               export KUBECONFIG=${KCFG}
               sed -i 's|image: .*|image: ${DOCKER_REGISTRY}/${IMAGE_NAME}:${imageTag}|' ${deploymentFile}
-              kubectl apply --insecure-skip-tls-verify -f ${deploymentFile}
-              kubectl rollout status --insecure-skip-tls-verify deployment/k8s-demo -n ${namespace}
+              kubectl apply --insecure-skip-tls-verify -f ${deploymentFile} --validate=false
+              kubectl rollout status --insecure-skip-tls-verify deployment/k8s-demo -n ${namespace} --validate=false
             """
           }
         }
