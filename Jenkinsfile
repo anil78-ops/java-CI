@@ -30,11 +30,11 @@ pipeline {
         script {
           def allowed = env.ACTUAL_BRANCH == 'dev' ||
                         env.ACTUAL_BRANCH == 'uat' ||
-                        env.ACTUAL_BRANCH ==~ /^release\/.*/ ||
-                        env.ACTUAL_BRANCH ==~ /^hotfix\/.*/
+                        env.ACTUAL_BRANCH.startsWith('release/') ||
+                        env.ACTUAL_BRANCH.startsWith('hotfix/')
 
           if (!allowed) {
-            error "❌ Branch '${env.ACTUAL_BRANCH}' is not allowed to run this pipeline. Only dev, uat, release/*, and hotfix/* are allowed."
+            error "❌ Branch '${env.ACTUAL_BRANCH}' is not allowed. Only dev, uat, release/*, and hotfix/* are permitted."
           }
 
           echo "✅ Branch '${env.ACTUAL_BRANCH}' passed validation."
@@ -79,15 +79,15 @@ pipeline {
       }
     }
 
-    stage('Publish Artifacts') {
-      steps {
-        dir("${APP_DIR}") {
-          withMaven(globalMavenSettingsConfig: 'maven-settings', jdk: 'jdk17', maven: 'Maven3', traceability: true) {
-            sh 'mvn deploy'
-          }
-        }
-      }
-    }
+    // stage('Publish Artifacts') {
+    //   steps {
+    //     dir("${APP_DIR}") {
+    //       withMaven(globalMavenSettingsConfig: 'maven-settings', jdk: 'jdk17', maven: 'Maven3', traceability: true) {
+    //         sh 'mvn deploy'
+    //       }
+    //     }
+    //   }
+    // }
 
     stage('Docker Build and Push') {
       steps {
@@ -107,38 +107,82 @@ pipeline {
         }
       }
     }
-    stage('Kubernetes Deploy') {
-      steps {
-        script {
-          def kubeconfigPath = '/home/ubuntu/.kube/config'
-            sh """
-                export KUBECONFIG=${kubeconfigPath}
-                kubectl apply -f /home/ubuntu/test.yaml
-                kubectl apply -f /home/ubuntu/testservice.yaml
-            """
-        }
-      }
-    }        
-  }      
 
+
+
+stage('Kubernetes Deploy') {
+  when {
+    expression { return ['dev', 'uat', 'release'].any { env.ACTUAL_BRANCH.startsWith(it) } || env.ACTUAL_BRANCH.startsWith('hotfix/') }
+  }
+  steps {
+    script {
+      def branch = env.ACTUAL_BRANCH
+      def namespace = ['dev': 'dev', 'uat': 'uat', 'release': 'prod', 'hotfix': 'prod'].find { branch.startsWith(it.key) }?.value
+      def kubeconfigCredentialId = ""
+      def deploymentFile = ""
+
+      switch (branch) {
+        case 'dev':
+          kubeconfigCredentialId = 'kubeconfig-dev'
+          deploymentFile = 'manifests/dev/dev-deployment.yaml'
+          break
+        case 'uat':
+          kubeconfigCredentialId = 'kubeconfig-uat'
+          deploymentFile = 'manifests/uat/uat-deployment.yaml'
+          break
+        case ~ /^release\/.*/:
+        case ~ /^hotfix\/.*/:
+          kubeconfigCredentialId = 'kubeconfig-prod'
+          deploymentFile = 'manifests/prod/prod-deployment.yaml'
+          break
+        default:
+          error "Unsupported branch: ${branch}"
+      }
+
+      def safeTag = branch.replaceAll('/', '-')
+      def imageTag = "${safeTag}-${BUILD_NUMBER}"
+      env.IMAGE_TAG = imageTag
+
+      withCredentials([
+        file(credentialsId: kubeconfigCredentialId, variable: 'KCFG'),
+        [$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'aws-cred']
+      ]) {
+        sh """
+          export KUBECONFIG=$KCFG
+          if [ ! -f ${deploymentFile} ]; then echo "❌ File ${deploymentFile} not found!"; exit 1; fi
+          sed -i 's|image: .*|image: ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}|' ${deploymentFile}
+          kubectl apply --insecure-skip-tls-verify -f ${deploymentFile}
+          kubectl rollout status --insecure-skip-tls-verify deployment/k8s-demo -n ${namespace}
+        """
+      }
+    }
+  }
+}
+
+
+
+  }
 
   post {
     always {
-      echo '🧹 Cleaning up workspace and Docker images...'
+      echo "🧹 Running cleanup..."
 
+      // Cleanup Trivy output
+      sh 'rm -f fs.html || true'
+
+      // Remove dangling images
+      sh 'docker image prune -f || true'
+
+      // Optional: remove this specific build image to save space
       script {
-        def safeTag = env.ACTUAL_BRANCH?.replaceAll('/', '-') ?: "undefined"
+        def safeTag = env.ACTUAL_BRANCH.replaceAll('/', '-')
         def imageTag = "${safeTag}-${BUILD_NUMBER}"
-
-        // Delete the local image
-        sh """
-          docker rmi -f ${DOCKER_REGISTRY}/${IMAGE_NAME}:${imageTag} || true
-        """
+        def fullImage = "${DOCKER_REGISTRY}/${IMAGE_NAME}:${imageTag}"
+        sh "docker rmi ${fullImage} || true"
       }
 
+      // Cleanup workspace if needed
       cleanWs()
-
-      echo "✅ Cleanup complete."
     }
   }
 }
