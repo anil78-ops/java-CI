@@ -79,15 +79,15 @@ pipeline {
       }
     }
 
-    stage('Publish Artifacts') {
-      steps {
-        dir("${APP_DIR}") {
-          withMaven(globalMavenSettingsConfig: 'maven-settings', jdk: 'jdk17', maven: 'Maven3', traceability: true) {
-            sh 'mvn deploy'
-          }
-        }
-      }
-    }
+    // stage('Publish Artifacts') {
+    //   steps {
+    //     dir("${APP_DIR}") {
+    //       withMaven(globalMavenSettingsConfig: 'maven-settings', jdk: 'jdk17', maven: 'Maven3', traceability: true) {
+    //         sh 'mvn deploy'
+    //       }
+    //     }
+    //   }
+    // }
 
     stage('Docker Build and Push') {
       steps {
