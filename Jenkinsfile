@@ -110,46 +110,6 @@ pipeline {
 
 
 
-stage('Kubernetes Deploy') {
-  when {
-    expression {
-      // Only deploy on dev, uat, release/*, or hotfix/*
-      return ['dev', 'uat', 'release'].any { env.ACTUAL_BRANCH.startsWith(it) } ||
-             env.ACTUAL_BRANCH.startsWith('hotfix/')
-    }
-  }
-  steps {
-    script {
-      def branch = env.ACTUAL_BRANCH
-
-      // Map branch to Kubernetes namespace
-      def namespace = [
-        'dev': 'dev',
-        'uat': 'uat',
-        'release': 'prod',
-        'hotfix': 'prod'
-      ].find { branch.startsWith(it.key) }?.value
-
-      def kubeconfigCredentialId = ""
-      def deploymentFile = ""
-
-      // Choose credentials & manifest based on branch pattern
-      switch (branch) {
-        case 'dev':
-          kubeconfigCredentialId = 'kubeconfig-dev'
-          deploymentFile = 'manifests/dev/dev-deployment.yaml'
-          break
-        case 'uat':
-          kubeconfigCredentialId = 'kubeconfig-uat'
-          deploymentFile = 'manifests/uat/uat-deployment.yaml'
-          break
-        case ~ /^release\/.*/:
-        case
-
-
-
-  }
-
   post {
     always {
       echo "🧹 Running cleanup..."
