@@ -15,7 +15,6 @@ pipeline {
     }
 
     stages {
-
         stage('Determine Branch') {
             steps {
                 script {
@@ -98,36 +97,39 @@ pipeline {
             }
         }
 
-stage('Update Deployment Manifest') {
-    steps {
-        script {
-            def manifestFile = 'manifests/dev/dev-deployment.yaml'
+        stage('Update Deployment Manifest') {
+            steps {
+                script {
+                    def manifestFile = 'manifests/dev/dev-deployment.yaml'
 
-            if (!fileExists(manifestFile)) {
-                error "❌ Manifest file not found at ${manifestFile}"
+                    if (!fileExists(manifestFile)) {
+                        error "❌ Manifest file not found at ${manifestFile}"
+                    }
+
+                    def imageLine = "image: ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
+                    def updatedContent = readFile(file: manifestFile).replaceAll(/image: .*/, imageLine)
+                    writeFile(file: manifestFile, text: updatedContent)
+
+                    echo "✅ Updated deployment manifest with image tag: ${IMAGE_TAG}"
+                }
             }
+        }
 
-            def imageLine = "image: ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
-            def updatedContent = readFile(file: manifestFile).replaceAll(/image: .*/, imageLine)
-            writeFile(file: manifestFile, text: updatedContent)
-
-            echo "✅ Updated deployment manifest with image tag: ${IMAGE_TAG}"
+        stage('Commit and Push Manifest') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'gitpushfor-updateyamlfile', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_TOKEN')]) {
+                    script {
+                        sh """
+                            git config user.name "AIL6339"
+                            git config user.email "vanilkumar4191@gmail.com"
+                            git remote set-url origin https://${GIT_USER}:${GIT_TOKEN}@github.com/anil78-ops/java-CI.git
+                            git add manifests/dev/dev-deployment.yaml
+                            git commit -m "🔄 Update image tag to ${IMAGE_TAG}" || echo "No changes to commit"
+                            git push origin ${ACTUAL_BRANCH}
+                        """
+                    }
+                }
+            }
         }
     }
-}
-
-stage('Commit and Push Manifest') {
-    steps {
-        script {
-            sh """
-                git config user.name "AIL6339"
-                git config user.email "vanilkumar4191@gmail.com"
-                git add manifests/dev/dev-deployment.yaml
-                git commit -m "🔄 Update image tag to ${IMAGE_TAG}"
-                git push origin ${ACTUAL_BRANCH}
-            """
-        }
-    }
-}
- }
 }
