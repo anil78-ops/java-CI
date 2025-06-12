@@ -2,11 +2,11 @@ pipeline {
   agent any
 
   environment {
-    IMAGE_NAME = "java-ci"
-    DOCKER_REGISTRY = "anilk13"
+    IMAGE_NAME         = "java-ci"
+    DOCKER_REGISTRY    = "anilk13"
     GIT_CREDENTIALS_ID = "git-cred"
-    APP_DIR = "app"
-    SCANNER_HOME = tool 'sonar-scanner'
+    APP_DIR            = "app"
+    SCANNER_HOME       = tool 'sonar-scanner'
   }
 
   tools {
@@ -15,7 +15,6 @@ pipeline {
   }
 
   stages {
-
     stage('Determine Branch') {
       steps {
         script {
@@ -32,11 +31,9 @@ pipeline {
                         env.ACTUAL_BRANCH == 'uat' ||
                         env.ACTUAL_BRANCH.startsWith('release/') ||
                         env.ACTUAL_BRANCH.startsWith('hotfix/')
-
           if (!allowed) {
             error "❌ Branch '${env.ACTUAL_BRANCH}' is not allowed. Only dev, uat, release/*, and hotfix/* are permitted."
           }
-
           echo "✅ Branch '${env.ACTUAL_BRANCH}' passed validation."
         }
       }
@@ -78,16 +75,6 @@ pipeline {
         }
       }
     }
-
-    // stage('Publish Artifacts') {
-    //   steps {
-    //     dir("${APP_DIR}") {
-    //       withMaven(globalMavenSettingsConfig: 'maven-settings', jdk: 'jdk17', maven: 'Maven3', traceability: true) {
-    //         sh 'mvn deploy'
-    //       }
-    //     }
-    //   }
-    // }
 
     stage('Docker Build and Push') {
       steps {
