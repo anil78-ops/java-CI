@@ -6,12 +6,12 @@ pipeline {
         DOCKER_REGISTRY = "anilk13"
         GIT_CREDENTIALS_ID = "git-cred"
         APP_DIR = "app"
-        SCANNER_HOME = tool 'sonar-scanner' // Ensure 'sonar-scanner' is configured in Jenkins Global Tool Configuration
+        SCANNER_HOME = tool 'sonar-scanner'
     }
 
     tools {
-        jdk 'jdk17' // Ensure 'jdk17' is configured in Jenkins Global Tool Configuration
-        maven 'Maven3' // Ensure 'Maven3' is configured in Jenkins Global Tool Configuration
+        jdk 'jdk17'
+        maven 'Maven3'
     }
 
     stages {
@@ -34,7 +34,7 @@ pipeline {
                                   env.ACTUAL_BRANCH.startsWith('hotfix/')
 
                     if (!allowed) {
-                        error "❌ Branch '${env.ACTUAL_BRANCH}' is not allowed. Only dev, uat, release/*, and hotfix/* are permitted."
+                        error "❌ Branch '${env.ACTUAL_BRANCH}' is not allowed."
                     }
 
                     echo "✅ Branch '${env.ACTUAL_BRANCH}' passed validation."
@@ -52,7 +52,6 @@ pipeline {
 
         stage('Trivy FS Scan') {
             steps {
-                // Ensure Trivy is installed and accessible in the Jenkins agent's PATH
                 sh "trivy fs --format table -o fs.html ."
             }
         }
@@ -67,7 +66,7 @@ pipeline {
 
         stage('SonarQube Analysis') {
             steps {
-                withSonarQubeEnv('sonar-server') { // Ensure 'sonar-server' is configured in Jenkins System Configuration
+                withSonarQubeEnv('sonar-server') {
                     dir("${APP_DIR}") {
                         sh """
                             ${SCANNER_HOME}/bin/sonar-scanner \\
@@ -80,16 +79,6 @@ pipeline {
             }
         }
 
-        // stage('Publish Artifacts') {
-        //    steps {
-        //        dir("${APP_DIR}") {
-        //            withMaven(globalMavenSettingsConfig: 'maven-settings', jdk: 'jdk17', maven: 'Maven3', traceability: true) {
-        //                sh 'mvn deploy'
-        //            }
-        //        }
-        //    }
-        // }
-
         stage('Docker Build and Push') {
             steps {
                 dir("${APP_DIR}") {
@@ -98,8 +87,6 @@ pipeline {
                         def imageTag = "${safeTag}-${BUILD_NUMBER}"
                         env.IMAGE_TAG = imageTag
 
-                        // Ensure 'docker-cred' is a Docker Hub or other Docker Registry credential in Jenkins
-                        // The 'url' parameter for withDockerRegistry is often not needed for Docker Hub or can be an empty string.
                         withDockerRegistry(credentialsId: 'docker-cred', url: '') {
                             sh """
                                 docker build -t ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG} .
@@ -110,34 +97,32 @@ pipeline {
                 }
             }
         }
+
+        stage('Update Deployment Manifest') {
+            steps {
+                script {
+                    def manifestFile = 'k8s/dev-deployment.yaml'
+                    def imageLine = "image: ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
+                    def updatedContent = readFile(file: manifestFile).replaceAll(/image: .*/, imageLine)
+                    writeFile(file: manifestFile, text: updatedContent)
+
+                    echo "✅ Updated deployment manifest with image tag: ${IMAGE_TAG}"
+                }
+            }
+        }
+
+        stage('Commit and Push Manifest') {
+            steps {
+                script {
+                    sh """
+                        git config user.name "AIL6339"
+                        git config user.email "vanilkumar4191@gmail.com"
+                        git add k8s/dev-deployment.yaml
+                        git commit -m "🔄 Update image tag to ${IMAGE_TAG}"
+                        git push origin ${ACTUAL_BRANCH}
+                    """
+                }
+            }
+        }
     }
 }
-
-    stage('Update Deployment Manifest') {
-      steps {
-        script {
-          def manifestFile = 'k8s/dev-deployment.yaml'
-          def imageLine = "image: ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
-          def updatedContent = readFile(file: manifestFile).replaceAll(/image: .*/, imageLine)
-          writeFile(file: manifestFile, text: updatedContent)
-
-          echo "✅ Updated deployment manifest with image tag: ${IMAGE_TAG}"
-        }
-      }
-    }
-
-    stage('Commit and Push Manifest') {
-      steps {
-        script {
-          sh '''
-            git config user.name "AIL6339"
-            git config user.email "vanilkumar4191@gmail.com"
-            git add k8s/dev-deployment.yaml
-            git commit -m "🔄 Update image tag to ${IMAGE_TAG}"
-            git push origin ${BRANCH_NAME}
-          '''
-        }
-      }
-    }
-
-
