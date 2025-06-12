@@ -112,3 +112,24 @@ pipeline {
         }
     }
 }
+
+stage('Update Deployment Manifest') {
+    steps {
+        script {
+            def manifestFile = "manifests/dev/dev-deployment.yaml" // adjust path as needed
+            def newImage = "${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
+
+            // Replace image line in YAML
+            sh """
+                sed -i 's|image: .\\+|image: ${newImage}|' ${manifestFile}
+                git config user.email "jenkins@example.com"
+                git config user.name "Jenkins CI"
+                git add ${manifestFile}
+                git commit -m "🔄 Update image tag to ${IMAGE_TAG}"
+                git push origin ${env.ACTUAL_BRANCH}
+            """
+        }
+    }
+}
+
+
