@@ -158,31 +158,24 @@ stage('Kubernetes Deploy') {
     }
   }
 }
-
-
-
   }
 
-  post {
-    always {
-      echo "🧹 Running cleanup..."
+post {
+  always {
+    echo "🧹 Running cleanup..."
+    // your unconditioned parts like Trivy pruning here...
 
-      // Cleanup Trivy output
-      sh 'rm -f fs.html || true'
-
-      // Remove dangling images
-      sh 'docker image prune -f || true'
-
-      // Optional: remove this specific build image to save space
-      script {
-        def safeTag = env.ACTUAL_BRANCH.replaceAll('/', '-')
-        def imageTag = "${safeTag}-${BUILD_NUMBER}"
-        def fullImage = "${DOCKER_REGISTRY}/${IMAGE_NAME}:${imageTag}"
-        sh "docker rmi ${fullImage} || true"
+    // Wrap cleanWs and other heavy cleanup steps:
+    script {
+      if (!params.SKIP_CLEANUP) {
+        echo "✅ Performing workspace & image cleanup"
+        sh 'docker image prune -f || true'
+        sh "docker rmi ${DOCKER_REGISTRY}/${IMAGE_NAME}:${env.ACTUAL_BRANCH.replaceAll('/', '-')}-${BUILD_NUMBER}" +
+           " || true"
+        cleanWs()
+      } else {
+        echo "⚠️ SKIP_CLEANUP is true; skipping cleanup"
       }
-
-      // Cleanup workspace if needed
-      cleanWs()
     }
   }
 }
