@@ -98,31 +98,36 @@ pipeline {
             }
         }
 
-        stage('Update Deployment Manifest') {
-            steps {
-                script {
-                    def manifestFile = 'k8s/dev-deployment.yaml'
-                    def imageLine = "image: ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
-                    def updatedContent = readFile(file: manifestFile).replaceAll(/image: .*/, imageLine)
-                    writeFile(file: manifestFile, text: updatedContent)
+stage('Update Deployment Manifest') {
+    steps {
+        script {
+            def manifestFile = 'manifests/dev/dev-deployment.yaml'
 
-                    echo "✅ Updated deployment manifest with image tag: ${IMAGE_TAG}"
-                }
+            if (!fileExists(manifestFile)) {
+                error "❌ Manifest file not found at ${manifestFile}"
             }
-        }
 
-        stage('Commit and Push Manifest') {
-            steps {
-                script {
-                    sh """
-                        git config user.name "AIL6339"
-                        git config user.email "vanilkumar4191@gmail.com"
-                        git add k8s/dev-deployment.yaml
-                        git commit -m "🔄 Update image tag to ${IMAGE_TAG}"
-                        git push origin ${ACTUAL_BRANCH}
-                    """
-                }
-            }
+            def imageLine = "image: ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
+            def updatedContent = readFile(file: manifestFile).replaceAll(/image: .*/, imageLine)
+            writeFile(file: manifestFile, text: updatedContent)
+
+            echo "✅ Updated deployment manifest with image tag: ${IMAGE_TAG}"
         }
     }
+}
+
+stage('Commit and Push Manifest') {
+    steps {
+        script {
+            sh """
+                git config user.name "AIL6339"
+                git config user.email "vanilkumar4191@gmail.com"
+                git add manifests/dev/dev-deployment.yaml
+                git commit -m "🔄 Update image tag to ${IMAGE_TAG}"
+                git push origin ${ACTUAL_BRANCH}
+            """
+        }
+    }
+}
+ }
 }
