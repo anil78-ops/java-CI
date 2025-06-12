@@ -117,12 +117,12 @@ pipeline {
 
         stage('Commit and Push Manifest') {
             steps {
-                withCredentials([usernamePassword(credentialsId: 'gitpushfor-updateyamlfile', usernameVariable: 'GIT_USERNAME', passwordVariable: 'GIT_PASSWORD')]) {
+                withCredentials([usernamePassword(credentialsId: 'gitpushfor-updateyamlfile', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_PASSWORD')]) {
                     script {
                         sh """
                             git config user.name "AIL6339"
                             git config user.email "vanilkumar4191@gmail.com"
-                            git remote set-url origin https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com/anil78-ops/java-CI.git
+                            git remote set-url origin https://${GIT_USER}:${GIT_PASSWORD}@github.com/anil78-ops/java-CI.git
                             git add manifests/dev/dev-deployment.yaml
                             git commit -m "🔄 Update image tag to ${IMAGE_TAG}" || echo "No changes to commit"
                             git push origin ${ACTUAL_BRANCH}
