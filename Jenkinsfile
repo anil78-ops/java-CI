@@ -4,7 +4,6 @@ pipeline {
     environment {
         IMAGE_NAME = "java-ci"
         DOCKER_REGISTRY = "anilk13"
-        GIT_CREDENTIALS_ID = "git-cred"
         APP_DIR = "app"
         SCANNER_HOME = tool 'sonar-scanner'
     }
@@ -45,7 +44,7 @@ pipeline {
             steps {
                 git branch: "${env.ACTUAL_BRANCH}",
                     url: 'https://github.com/anil78-ops/java-CI.git',
-                    credentialsId: "${GIT_CREDENTIALS_ID}"
+                    credentialsId: 'gitpushfor-updateyamlfile'
             }
         }
 
@@ -117,11 +116,15 @@ pipeline {
 
         stage('Commit and Push Manifest') {
             steps {
-                withCredentials([usernamePassword(credentialsId: 'gitpushfor-updateyamlfile', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_PASSWORD')]) {
+                withCredentials([usernamePassword(
+                    credentialsId: 'gitpushfor-updateyamlfile',
+                    usernameVariable: 'GIT_USER',
+                    passwordVariable: 'GIT_PASSWORD'
+                )]) {
                     script {
                         sh """
-                            git config user.name "AIL6339"
-                            git config user.email "vanilkumar4191@gmail.com"
+                            git config --global user.name "AIL6339"
+                            git config --global user.email "vanilkumar4191@gmail.com"
                             git remote set-url origin https://${GIT_USER}:${GIT_PASSWORD}@github.com/anil78-ops/java-CI.git
                             git add manifests/dev/dev-deployment.yaml
                             git commit -m "🔄 Update image tag to ${IMAGE_TAG}" || echo "No changes to commit"
