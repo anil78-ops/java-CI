@@ -13,69 +13,66 @@ pipeline {
         maven 'Maven3'
     }
 
+    // Define a global variable to control skipping
+    // This needs to be set in a way that it's accessible across stages for 'when' conditions.
+    // The most reliable way for early checks is within a 'script' block at the top-level 'stages' or 'steps'
+    // or by making the whole stages section conditional, which is not directly declarative.
+    // A better approach is to use the `beforeAgent` which runs before an agent is allocated for stages.
+
     stages {
-        stage('Determine Branch') {
+        stage('Determine Branch and Early Skip Check') {
             steps {
                 script {
                     env.ACTUAL_BRANCH = env.BRANCH_NAME ?: env.GIT_BRANCH?.replaceFirst(/^origin\//, '') ?: 'dev'
                     echo "🔀 Detected branch: ${env.ACTUAL_BRANCH}"
-                }
-            }
-        }
 
-        // Moved to be very early
-        stage('Skip if Jenkins Commit (Early Check)') {
-            steps {
-                script {
-                    // We need to clone just enough to check the last commit.
-                    // Or, if you use a webhook, the payload might contain the committer info.
-                    // For simplicity, let's clone the head.
-                    // Note: This git clone might be redundant if the SCM already provides it.
-                    // You might need to adjust this depending on your Jenkins SCM setup.
+                    // IMPORTANT: We need to determine the last committer *before* the main 'Clone Repository'
+                    // The initial SCM checkout done by Jenkins (visible in your console output)
+                    // has already provided the commit message and committer for the Jenkinsfile itself.
+                    // We can try to leverage that.
+
+                    // If your Jenkins job is triggered by a commit, the SCM plugin *usually*
+                    // provides environmental variables like `GIT_COMMITTER_EMAIL` or similar.
+                    // Let's try to get the last commit email from the initial SCM checkout info.
+                    // If not, we'll need to do a quick fetch to get it.
+
+                    def lastCommitEmail = ''
+                    // Attempt to get commit email from initial SCM checkout (more efficient)
+                    // This often requires accessing internal Jenkins variables or the `currentBuild` object
+                    // to get the commit details. The `changelog` property of `currentBuild.changeSets`
+                    // might contain this, but it's more complex to parse here.
+                    // For simplicity, let's stick with git log, but ensure we have the context.
+
+                    // Check if the current workspace has the git repository cloned from the initial checkout.
+                    // The console output suggests it is: `/var/lib/jenkins/workspace/java-CI@script/...`
+                    // We can execute `git log` from there.
                     try {
-                        sh "git fetch origin ${env.ACTUAL_BRANCH}"
-                        def lastCommitEmail = sh(script: "git log -1 --pretty=format:'%ae'", returnStdout: true).trim()
+                        // Ensure we are in the correct directory for git commands.
+                        // The initial checkout places it at the workspace root.
+                        dir("${env.WORKSPACE}") { // Or just use `sh` without dir if already at root
+                            sh "git fetch origin ${env.ACTUAL_BRANCH}" // Ensure branch is up-to-date
+                            lastCommitEmail = sh(script: "git log -1 --pretty=format:'%ae'", returnStdout: true).trim()
+                        }
                         echo "📧 Last commit by: ${lastCommitEmail}"
-                        if (lastCommitEmail == 'vanilkumar4191@gmail.com') {
-                            echo "🚫 Commit made by Jenkins bot, skipping build to prevent loop."
-                            currentBuild.result = 'SUCCESS' // Mark current build as success
-                            sh "exit 0" // This will exit the current shell step successfully
-                            // You might need to use `error("Skipping build")` and configure global catch on error
-                            // or use `return` if this block is inside a function that can return.
-                            // A simpler way is to use `currentBuild.result = 'SUCCESS'` and then ensure no
-                            // further stages run.
-                            script {
-                                // This is a common pattern to stop further stages
-                                // if you want to completely abort the current pipeline run gracefully.
-                                // `error` throws an exception, which will trigger the `failure` post-action.
-                                // `currentBuild.result = 'SUCCESS'` and then ending execution here
-                                // is tricky without `error` or a global return.
-                                // The best way in a declarative pipeline to stop further stages and mark success
-                                // is usually to use `error` and handle it in a `post` section.
-                                // However, the intent here is to `return` from the script block,
-                                // which only returns from the `script` step, not the entire pipeline.
-                                // A more robust way to skip all subsequent stages is:
-                                // If this is triggered by a Jenkins bot commit, we want to essentially make this build
-                                // a "no-op" and mark it as successful.
 
-                                // One way to achieve this is to make the entire pipeline conditionally run.
-                                // But that's not possible directly in a declarative pipeline with top-level `when`.
-                                // The existing `return` within the script block *does* exit that step.
-                                // To prevent *subsequent stages* from running, you can use a global flag.
-                                env.SKIP_FULL_BUILD = 'true'
-                            }
+                        if (lastCommitEmail == 'vanilkumar4191@gmail.com') {
+                            echo "🚫 Commit made by Jenkins bot, skipping entire build to prevent loop."
+                            // Use `currentBuild.result` to mark the build status and `error` to stop the pipeline.
+                            // The `post { success { ... } }` block will still run for this.
+                            currentBuild.result = 'SUCCESS'
+                            // This `error` will stop the pipeline immediately.
+                            // The `post` section will then be executed.
+                            error "Pipeline skipped due to Jenkins bot commit."
                         }
                     } catch (Exception e) {
                         echo "⚠️ Could not determine last commit email or error during early skip check: ${e.getMessage()}"
-                        // Continue with the build if there's an error in determining the last commit.
-                        // This ensures builds still run if git log fails for some reason.
+                        // If there's an error getting the commit info, proceed with the build.
                     }
                 }
             }
         }
 
         stage('Branch Validation') {
-            when { expression { return env.SKIP_FULL_BUILD != 'true' } } // Only run if not skipping
             steps {
                 script {
                     def allowed = env.ACTUAL_BRANCH == 'dev' ||
@@ -93,24 +90,22 @@ pipeline {
         }
 
         stage('Clone Repository') {
-            when { expression { return env.SKIP_FULL_BUILD != 'true' } } // Only run if not skipping
             steps {
+                // This stage is still important even if we fetched earlier,
+                // as it ensures the correct branch/commit is checked out for the rest of the build.
                 git branch: "${env.ACTUAL_BRANCH}",
                     url: 'https://github.com/anil78-ops/java-CI.git',
-                    credentialsId: 'gitpushfor-updateyamlfile'
+                    credentialsId: 'gitpushfor-updateyamlfile' // Ensure this credential is valid for cloning
             }
         }
 
-        // ... (Add `when { expression { return env.SKIP_FULL_BUILD != 'true' } }` to all subsequent stages)
         stage('Trivy FS Scan') {
-            when { expression { return env.SKIP_FULL_BUILD != 'true' } }
             steps {
                 sh "trivy fs --format table -o fs.html ."
             }
         }
 
         stage('Maven Build') {
-            when { expression { return env.SKIP_FULL_BUILD != 'true' } }
             steps {
                 dir("${APP_DIR}") {
                     sh 'mvn clean package -DskipTests'
@@ -119,7 +114,6 @@ pipeline {
         }
 
         stage('SonarQube Analysis') {
-            when { expression { return env.SKIP_FULL_BUILD != 'true' } }
             steps {
                 withSonarQubeEnv('sonar-server') {
                     dir("${APP_DIR}") {
@@ -135,7 +129,6 @@ pipeline {
         }
 
         stage('Docker Build and Push') {
-            when { expression { return env.SKIP_FULL_BUILD != 'true' } }
             steps {
                 dir("${APP_DIR}") {
                     script {
@@ -155,7 +148,6 @@ pipeline {
         }
 
         stage('Update Deployment Manifest') {
-            when { expression { return env.SKIP_FULL_BUILD != 'true' } }
             steps {
                 script {
                     def manifestFile = 'manifests/dev/dev-deployment.yaml'
@@ -174,7 +166,6 @@ pipeline {
         }
 
         stage('Commit and Push Manifest') {
-            when { expression { return env.SKIP_FULL_BUILD != 'true' } }
             steps {
                 withCredentials([usernamePassword(
                     credentialsId: 'gitpushfor-updateyamlfile',
@@ -210,6 +201,8 @@ pipeline {
         }
 
         success {
+            // This will execute if currentBuild.result was set to 'SUCCESS'
+            // for the early exit, or if the entire pipeline ran successfully.
             echo "✅ Build completed successfully!"
         }
 
