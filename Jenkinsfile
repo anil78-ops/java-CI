@@ -51,13 +51,12 @@ pipeline {
         stage('Skip if Jenkins Commit') {
             steps {
                 script {
-                    sh "git fetch origin ${env.ACTUAL_BRANCH}" // ensure latest commits
+                    sh "git fetch origin ${env.ACTUAL_BRANCH}"
                     def lastCommitEmail = sh(script: "git log -1 --pretty=format:'%ae'", returnStdout: true).trim()
                     echo "📧 Last commit by: ${lastCommitEmail}"
                     if (lastCommitEmail == 'vanilkumar4191@gmail.com') {
                         echo "🚫 Commit made by Jenkins bot, skipping build to prevent loop."
                         currentBuild.result = 'SUCCESS'
-                        // terminate early
                         return
                     }
                 }
@@ -149,6 +148,32 @@ pipeline {
                     }
                 }
             }
+        }
+    }
+
+    post {
+        always {
+            echo "🧹 Running post-build cleanup..."
+            // Optional: Remove Trivy output
+            sh "rm -f fs.html || true"
+            
+            // Optional: Clean Docker (adjust as needed, e.g., remove just built image)
+            sh "docker image prune -f || true"
+            
+            // Optional: clean workspace
+            cleanWs()
+        }
+
+        success {
+            echo "✅ Build completed successfully!"
+        }
+
+        failure {
+            echo "❌ Build failed. Please check logs."
+        }
+
+        aborted {
+            echo "🚫 Build was aborted."
         }
     }
 }
