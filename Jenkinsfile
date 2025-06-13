@@ -14,6 +14,19 @@ pipeline {
     }
 
     stages {
+        stage('Skip if Jenkins Commit') {
+            steps {
+                script {
+                    def lastCommitEmail = sh(script: "git log -1 --pretty=format:'%ae'", returnStdout: true).trim()
+                    if (lastCommitEmail == 'vanilkumar4191@gmail.com') {
+                        echo "🚫 Commit made by Jenkins bot, skipping build to prevent loop."
+                        currentBuild.result = 'SUCCESS'
+                        return
+                    }
+                }
+            }
+        }
+
         stage('Determine Branch') {
             steps {
                 script {
