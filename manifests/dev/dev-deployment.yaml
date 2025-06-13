@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
       - name: k8s-demo
-        image: anilk13/java-ci:dev-117
+        image: anilk13/java-ci:dev-119
         ports:
         - containerPort: 8080
         livenessProbe:
