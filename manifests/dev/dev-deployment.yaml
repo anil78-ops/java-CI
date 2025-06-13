@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
       - name: k8s-demo
-        image: krishnasravi/kubernetes-demo:v1
+        image: anilk13/java-ci:dev-79
         ports:
         - containerPort: 8080
         livenessProbe:
