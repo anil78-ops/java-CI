@@ -14,6 +14,20 @@ pipeline {
     }
 
     stages {
+        // New initial stage to handle SCM skip
+        stage('Early SCM Skip Check') {
+            steps {
+                script {
+                    // This step will check the commit message that triggered the build.
+                    // If it matches '.*\[ci skip\].*', the build will be aborted.
+                    // 'deleteBuild: true' makes it so no record of this aborted build remains.
+                    // You can remove deleteBuild: true if you want to see the aborted builds in history.
+                    scmSkip(skipPattern: '.*\\[ci skip\\].*', deleteBuild: false)
+                    echo "No 'skip' pattern detected in commit message, proceeding with pipeline."
+                }
+            }
+        }
+
         stage('Determine Branch') {
             steps {
                 script {
@@ -42,18 +56,11 @@ pipeline {
 
         stage('Clone Repository') {
             steps {
-                // This will clone the repository including the latest commit by Jenkins bot if any
-                // The SCM polling configuration ensures this build itself wasn't triggered by that commit.
                 git branch: "${env.ACTUAL_BRANCH}",
                     url: 'https://github.com/anil78-ops/java-CI.git',
                     credentialsId: 'gitpushfor-updateyamlfile'
             }
         }
-
-        // The "Skip if Jenkins Commit" stage is now unnecessary because the SCM trigger handles it.
-        // If you were using it for other purposes (e.g., preventing loops from manual triggers or other webhooks),
-        // you might re-evaluate its necessity, but for the described looping issue, it's redundant.
-        // I've removed it for a cleaner pipeline.
 
         stage('Trivy FS Scan') {
             steps {
@@ -134,7 +141,7 @@ pipeline {
                             git config --global user.email "vanilkumar4191@gmail.com"
                             git remote set-url origin https://${GIT_USER}:${GIT_PASSWORD}@github.com/anil78-ops/java-CI.git
                             git add manifests/dev/dev-deployment.yaml
-                            # THIS IS THE KEY CHANGE: Add '[ci skip]' to the commit message
+                            # IMPORTANT: Add '[ci skip]' to the commit message for SCM Skip plugin
                             git commit -m "[ci skip] 🔄 Update image tag to ${IMAGE_TAG}" || echo "No changes to commit"
                             git push origin ${ACTUAL_BRANCH}
                         """
@@ -147,13 +154,8 @@ pipeline {
     post {
         always {
             echo "🧹 Running post-build cleanup..."
-            // Optional: Remove Trivy output
             sh "rm -f fs.html || true"
-
-            // Optional: Clean Docker (adjust as needed, e.g., remove just built image)
             sh "docker image prune -f || true"
-
-            // Optional: clean workspace
             cleanWs()
         }
 
@@ -166,7 +168,7 @@ pipeline {
         }
 
         aborted {
-            echo "🚫 Build was aborted."
+            echo "🚫 Build was aborted (likely by SCM Skip)."
         }
     }
 }
